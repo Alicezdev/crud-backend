@@ -6,11 +6,14 @@ from flask_cors import CORS
 db_path = './crud.db'
 
 app = Flask(__name__)
+# Enable CORS for all routes
 CORS(app, resources={
     r"/*": {
-        "origins": ["http://localhost:4200"],  # Angular dev server
+        "origins": ["http://localhost:4200", "http://127.0.0.1:4200"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"]
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True,
+        "expose_headers": ["Content-Type", "X-Total-Count"]
     }
 })
 
