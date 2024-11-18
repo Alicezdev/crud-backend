@@ -1,8 +1,18 @@
 from flask import Flask, request, jsonify
 import sqlite3
 import os.path
+from flask_cors import CORS
 
 db_path = './crud.db'
+
+app = Flask(__name__)
+CORS(app, resources={
+    r"/*": {
+        "origins": ["http://localhost:4200"],  # Angular dev server
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Check if the database file exists
 check_db = os.path.isfile(db_path)
@@ -24,45 +34,47 @@ if not check_db:
     conn.commit()
     conn.close()
 
-app = Flask(__name__)
 
 # SQLite database file
-#DATABASE = '/home/st50109/domains/alicezdev.com/public_html/Sqlite/sqlite-autoconf-3470000/crud.db'
 DATABASE = './crud.db'
+
+def dict_factory(cursor, row):
+    d = {}
+    for idx, col in enumerate(cursor.description):
+        d[col[0]] = row[idx]
+    return d
 
 # Helper function to connect to the SQLite database
 def get_db():
     db = sqlite3.connect(DATABASE)
-    c = db.cursor()
+    db.row_factory = dict_factory
     return db
-
 
 # Create a Money Level Entry (POST) 
 @app.route('/money_level', methods=['POST'])
 def create_money_level():
     try:
         # Get data from the request
-        date = request.json.get('date')
-        count_down_date = request.json.get('count_down_date')
-        possiblity = request.json.get('possiblity')
-        level = request.json.get('level')
+        data = request.json
+        if not all(key in data for key in ['date', 'count_down_date', 'possiblity', 'level']):
+            return jsonify({"error": "Missing required fields"}), 400
 
         # Connect to the database
         conn = get_db()
-        print(conn)
         cursor = conn.cursor()
 
         # Insert data into the money_level table
         cursor.execute('''
             INSERT INTO money_level (date, count_down_date, possiblity, level)
             VALUES (?, ?, ?, ?)
-        ''', (date, count_down_date, possiblity, level))
+        ''', (data['date'], data['count_down_date'], data['possiblity'], data['level']))
 
         # Commit and close the connection
         conn.commit()
+        new_id = cursor.lastrowid
         conn.close()
 
-        return jsonify({"message": "Money level entry created successfully!"}), 201
+        return jsonify({"id": new_id, "message": "Money level entry created successfully!"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -77,14 +89,9 @@ def get_money_levels():
         # Retrieve all records from the table
         cursor.execute('SELECT * FROM money_level')
         money_levels = cursor.fetchall()
-
-        # Convert query result to a list of dictionaries
-        result = [{"id": entry["id"], "date": entry["date"], "count_down_date": entry["count_down_date"],
-                   "possiblity": entry["possiblity"], "level": entry["level"]} for entry in money_levels]
-
         conn.close()
 
-        return jsonify(result), 200
+        return jsonify(money_levels), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -99,20 +106,12 @@ def get_money_level(id):
         # Retrieve a specific record from the table
         cursor.execute('SELECT * FROM money_level WHERE id = ?', (id,))
         money_level = cursor.fetchone()
+        conn.close()
 
-        if money_level:
-            result = {
-                "id": money_level["id"],
-                "date": money_level["date"],
-                "count_down_date": money_level["count_down_date"],
-                "possiblity": money_level["possiblity"],
-                "level": money_level["level"]
-            }
-            conn.close()
-            return jsonify(result), 200
-        else:
-            conn.close()
-            return jsonify({"message": "Money level entry not found!"}), 404
+        if money_level is None:
+            return jsonify({"error": "Money level entry not found"}), 404
+
+        return jsonify(money_level), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 400
 
@@ -121,21 +120,24 @@ def get_money_level(id):
 def update_money_level(id):
     try:
         # Get data from the request
-        date = request.json.get('date')
-        count_down_date = request.json.get('count_down_date')
-        possiblity = request.json.get('possiblity')
-        level = request.json.get('level')
+        data = request.json
+        if not all(key in data for key in ['date', 'count_down_date', 'possiblity', 'level']):
+            return jsonify({"error": "Missing required fields"}), 400
 
         # Connect to the database
         conn = get_db()
         cursor = conn.cursor()
 
-        # Update the money_level table
+        # Update the record
         cursor.execute('''
-            UPDATE money_level
+            UPDATE money_level 
             SET date = ?, count_down_date = ?, possiblity = ?, level = ?
             WHERE id = ?
-        ''', (date, count_down_date, possiblity, level, id))
+        ''', (data['date'], data['count_down_date'], data['possiblity'], data['level'], id))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({"error": "Money level entry not found"}), 404
 
         conn.commit()
         conn.close()
@@ -152,8 +154,12 @@ def delete_money_level(id):
         conn = get_db()
         cursor = conn.cursor()
 
-        # Delete the money_level entry from the table
+        # Delete the record
         cursor.execute('DELETE FROM money_level WHERE id = ?', (id,))
+        
+        if cursor.rowcount == 0:
+            conn.close()
+            return jsonify({"error": "Money level entry not found"}), 404
 
         conn.commit()
         conn.close()
